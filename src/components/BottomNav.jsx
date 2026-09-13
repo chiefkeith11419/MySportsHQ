@@ -1,7 +1,7 @@
 const items = [
   ['home', '⌂', 'Home'],
   ['watch', '◉', 'Watch'],
-  ['content', '✎', 'Content'],
+  ['competitions', '🏆', 'Competitions'],
   ['settings', '⚙', 'Settings'],
 ];
 
