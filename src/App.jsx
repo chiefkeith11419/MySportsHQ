@@ -43,7 +43,6 @@ import {
 import {
   fetchFootballScoreboards,
   normalizeFootballLeagues,
-  toLegacyFootballEvents,
   fromLegacyFootballEvents,
 } from './services/football/index.js';
 
@@ -110,9 +109,11 @@ const routeTitles = {
 
 
 /* -------------------------------------------------------
-   TEMPORARY F1 WATCH NORMALIZER
+   TEMPORARY F1 → WATCH NORMALIZER
 
-   F1 will get its own v0.3 universal normalizer later.
+   Football is already on the universal v0.3 model.
+
+   F1 will move to the same model during the F1 overhaul.
 ------------------------------------------------------- */
 
 function normalizeF1Events(
@@ -180,7 +181,7 @@ function normalizeF1Events(
 
 
   /*
-    Future support for arrays of sessions/events.
+    Future support for individual sessions.
   */
 
   const sourceEvents =
@@ -358,7 +359,8 @@ export default function App() {
   /* -----------------------------------------------------
      CRICKET
 
-     Empty until Cricket v0.3 is connected.
+     Will move to the universal model during the
+     Cricket v0.3 phase.
   ----------------------------------------------------- */
 
   const [
@@ -369,7 +371,8 @@ export default function App() {
   /* -----------------------------------------------------
      WWE
 
-     Empty until WWE v0.3 is connected.
+     Will move to the universal model during the
+     WWE v0.3 phase.
   ----------------------------------------------------- */
 
   const [
@@ -465,13 +468,13 @@ export default function App() {
           );
 
 
-          /* -------------------------------------------
-             PROVIDER HEALTH
-          ------------------------------------------- */
-
           const messages =
             [];
 
+
+          /* -------------------------------------------
+             PARTIAL PROVIDER FAILURE
+          ------------------------------------------- */
 
           if (
             providerResult.errors
@@ -493,6 +496,10 @@ export default function App() {
             );
           }
 
+
+          /* -------------------------------------------
+             STALE CACHE
+          ------------------------------------------- */
 
           const staleLeagues =
             providerResult.leagues
@@ -525,6 +532,10 @@ export default function App() {
             );
           }
 
+
+          /* -------------------------------------------
+             FRESH CACHE
+          ------------------------------------------- */
 
           const cachedLeagues =
             providerResult.leagues
@@ -606,6 +617,8 @@ export default function App() {
 
   /* -----------------------------------------------------
      LOAD FORMULA 1
+
+     Existing provider remains until F1 v0.3 overhaul.
   ----------------------------------------------------- */
 
   useEffect(() => {
@@ -785,36 +798,12 @@ export default function App() {
 
 
   /* -----------------------------------------------------
-     LEGACY FOOTBALL FEED
-
-     Home and Watch still temporarily use this format.
-  ----------------------------------------------------- */
-
-  const footballEvents =
-    useMemo(
-      () => {
-        if (
-          footballFallback
-        ) {
-          return footballFallback;
-        }
-
-
-        return toLegacyFootballEvents(
-          footballV3
-        );
-      },
-      [
-        footballV3,
-        footballFallback,
-      ]
-    );
-
-
-  /* -----------------------------------------------------
      UNIVERSAL FOOTBALL FEED
 
-     FootballPage now consumes this directly.
+     Normal network data is already universal.
+
+     Demo fallback is converted from the old demo format
+     into the universal Sports HQ event model.
   ----------------------------------------------------- */
 
   const footballUniversalEvents =
@@ -846,7 +835,7 @@ export default function App() {
 
 
   /* -----------------------------------------------------
-     F1 EVENTS FOR WATCH
+     TEMPORARY F1 WATCH EVENTS
   ----------------------------------------------------- */
 
   const f1Events =
@@ -862,18 +851,22 @@ export default function App() {
 
 
   /* -----------------------------------------------------
-     TEMPORARY WATCH FEED
+     SPORTS HQ WATCH FEED
 
-     Football still enters Watch using legacy shape.
+     Football is universal.
 
-     Watch will later move to the universal event model.
+     F1 / Cricket / WWE will be converted fully during
+     their individual v0.3 migrations.
+
+     WatchPage supports both startTime and date during
+     this transition.
   ----------------------------------------------------- */
 
   const allEvents =
     useMemo(
       () =>
         [
-          ...footballEvents,
+          ...footballUniversalEvents,
 
           ...f1Events,
 
@@ -883,22 +876,36 @@ export default function App() {
         ]
           .filter(
             (event) =>
+              event?.startTime ||
               event?.date
           )
           .sort(
             (
-              a,
-              b
-            ) =>
-              new Date(
-                a.date
-              ).getTime() -
-              new Date(
-                b.date
-              ).getTime()
+              first,
+              second
+            ) => {
+              const firstDate =
+                first.startTime ||
+                first.date;
+
+
+              const secondDate =
+                second.startTime ||
+                second.date;
+
+
+              return (
+                new Date(
+                  firstDate
+                ).getTime() -
+                new Date(
+                  secondDate
+                ).getTime()
+              );
+            }
           ),
       [
-        footballEvents,
+        footballUniversalEvents,
         f1Events,
         cricketEvents,
         wweEvents,
@@ -915,10 +922,10 @@ export default function App() {
       event
     ) => {
       /*
-        Universal Football events use a Sports HQ ID,
-        but existing watchlists use the ESPN provider ID.
+        Universal provider events use Sports HQ IDs.
 
-        Preserve the provider ID during migration.
+        Existing saved watchlist entries use provider IDs,
+        so use providerId when available.
       */
 
       const id =
@@ -1008,11 +1015,9 @@ export default function App() {
       route
     ) {
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          FOOTBALL
-
-         Now uses universal Sports HQ events directly.
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'football':
         return (
@@ -1034,9 +1039,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          FORMULA 1
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'f1':
         return (
@@ -1056,9 +1061,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          WWE
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'wwe':
         return (
@@ -1072,9 +1077,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          CRICKET
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'cricket':
         return (
@@ -1088,9 +1093,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          FANTASY
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'fpl':
         return (
@@ -1120,11 +1125,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          WATCH
-
-         Still receives migration-format events.
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'watch':
         return (
@@ -1138,9 +1141,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          COMPETITIONS
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'competitions':
         return (
@@ -1152,9 +1155,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          CONTENT
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'content':
         return (
@@ -1188,9 +1191,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          SETTINGS
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'settings':
         return (
@@ -1206,11 +1209,9 @@ export default function App() {
         );
 
 
-      /* -----------------------------------------------
+      /* -------------------------------------------------
          HOME
-
-         Still receives legacy football temporarily.
-      ----------------------------------------------- */
+      ------------------------------------------------- */
 
       case 'home':
 
@@ -1219,7 +1220,7 @@ export default function App() {
           <HomePage
             football={
               footballUniversalEvents
-     }
+            }
 
             footballMode={
               footballMode

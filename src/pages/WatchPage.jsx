@@ -1,11 +1,78 @@
-import { useMemo, useState } from 'react';
+import {
+  useMemo,
+  useState,
+} from 'react';
 
 import MatchCard from '../components/MatchCard.jsx';
 import ScheduleEventCard from '../components/ScheduleEventCard.jsx';
 import Section from '../components/Section.jsx';
 
-import { SPORTS_CONFIG } from '../data/config.js';
-import { formatLocalDateTime } from '../services/sports.js';
+import {
+  SPORTS_CONFIG,
+} from '../data/config.js';
+
+import {
+  eventMatchesAnyTeam,
+  getFootballCompetitionGroups,
+} from '../services/football/index.js';
+
+import {
+  formatLocalDateTime,
+} from '../services/sports.js';
+
+
+/* -------------------------------------------------------
+   SPORT ORDER
+------------------------------------------------------- */
+
+const SPORT_ORDER = [
+  'football',
+  'cricket',
+  'f1',
+  'wwe',
+];
+
+
+/* -------------------------------------------------------
+   EVENT HELPERS
+
+   Universal Sports HQ events use startTime.
+
+   F1 / Cricket / WWE can temporarily still use date
+   until their v0.3 providers are migrated.
+------------------------------------------------------- */
+
+function getEventDate(event) {
+  return (
+    event?.startTime ||
+    event?.date ||
+    null
+  );
+}
+
+
+function getWatchlistId(event) {
+  return (
+    event?.source
+      ?.providerId ||
+    event?.id ||
+    null
+  );
+}
+
+
+function isStarred(
+  event,
+  watchlist
+) {
+  const id =
+    getWatchlistId(event);
+
+  return Boolean(
+    id &&
+    watchlist.includes(id)
+  );
+}
 
 
 /* -------------------------------------------------------
@@ -13,7 +80,8 @@ import { formatLocalDateTime } from '../services/sports.js';
 ------------------------------------------------------- */
 
 function startOfDay(value) {
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
   date.setHours(
     0,
@@ -26,37 +94,41 @@ function startOfDay(value) {
 }
 
 
-function sameCalendarDay(a, b) {
+function sameCalendarDay(
+  first,
+  second
+) {
   return (
-    startOfDay(a).getTime() ===
-    startOfDay(b).getTime()
+    startOfDay(first)
+      .getTime() ===
+    startOfDay(second)
+      .getTime()
   );
 }
 
 
-function getWeekendRange(referenceDate) {
+function getWeekendRange(
+  referenceDate
+) {
   const today =
-    startOfDay(referenceDate);
+    startOfDay(
+      referenceDate
+    );
 
   const day =
     today.getDay();
 
-
-  /*
-    Saturday = 6
-    Sunday = 0
-
-    If we're already on Sunday,
-    use the current weekend.
-
-    Otherwise use the next Saturday.
-  */
-
   let daysUntilSaturday =
     6 - day;
 
+
+  /*
+    Sunday belongs to the current weekend.
+  */
+
   if (day === 0) {
-    daysUntilSaturday = -1;
+    daysUntilSaturday =
+      -1;
   }
 
 
@@ -70,16 +142,22 @@ function getWeekendRange(referenceDate) {
 
 
   const monday =
-    new Date(saturday);
+    new Date(
+      saturday
+    );
 
   monday.setDate(
-    saturday.getDate() + 2
+    saturday.getDate() +
+      2
   );
 
 
   return {
-    start: saturday,
-    end: monday,
+    start:
+      saturday,
+
+    end:
+      monday,
   };
 }
 
@@ -89,16 +167,42 @@ function eventMatchesTab(
   tab,
   today
 ) {
+  const rawDate =
+    getEventDate(
+      event
+    );
+
+
+  if (!rawDate) {
+    return false;
+  }
+
+
   const eventDate =
-    new Date(event.date);
+    new Date(
+      rawDate
+    );
 
 
-  if (tab === 'yesterday') {
+  if (
+    Number.isNaN(
+      eventDate.getTime()
+    )
+  ) {
+    return false;
+  }
+
+
+  if (
+    tab ===
+    'yesterday'
+  ) {
     const yesterday =
       new Date(today);
 
     yesterday.setDate(
-      today.getDate() - 1
+      today.getDate() -
+        1
     );
 
     return sameCalendarDay(
@@ -108,7 +212,10 @@ function eventMatchesTab(
   }
 
 
-  if (tab === 'today') {
+  if (
+    tab ===
+    'today'
+  ) {
     return sameCalendarDay(
       eventDate,
       today
@@ -116,12 +223,16 @@ function eventMatchesTab(
   }
 
 
-  if (tab === 'tomorrow') {
+  if (
+    tab ===
+    'tomorrow'
+  ) {
     const tomorrow =
       new Date(today);
 
     tomorrow.setDate(
-      today.getDate() + 1
+      today.getDate() +
+        1
     );
 
     return sameCalendarDay(
@@ -131,18 +242,25 @@ function eventMatchesTab(
   }
 
 
-  if (tab === 'weekend') {
+  if (
+    tab ===
+    'weekend'
+  ) {
     const weekend =
-      getWeekendRange(today);
+      getWeekendRange(
+        today
+      );
 
     const time =
       eventDate.getTime();
 
     return (
       time >=
-        weekend.start.getTime() &&
+        weekend.start
+          .getTime() &&
       time <
-        weekend.end.getTime()
+        weekend.end
+          .getTime()
     );
   }
 
@@ -158,38 +276,51 @@ function eventMatchesTab(
 function getSport(event) {
   const value =
     String(
-      event.sport ||
-        event.sportType ||
-        'football'
-    ).toLowerCase();
+      event?.sport ||
+      event?.sportType ||
+      'football'
+    )
+      .toLowerCase()
+      .trim();
 
 
   if (
-    value.includes('soccer') ||
-    value === 'football'
+    value ===
+      'football' ||
+    value.includes(
+      'soccer'
+    )
   ) {
     return 'football';
   }
 
 
   if (
-    value.includes('formula') ||
-    value === 'f1'
+    value ===
+      'f1' ||
+    value.includes(
+      'formula'
+    )
   ) {
     return 'f1';
   }
 
 
   if (
-    value.includes('wrestling') ||
-    value === 'wwe'
+    value ===
+      'wwe' ||
+    value.includes(
+      'wrestling'
+    )
   ) {
     return 'wwe';
   }
 
 
   if (
-    value.includes('cricket')
+    value.includes(
+      'cricket'
+    )
   ) {
     return 'cricket';
   }
@@ -201,10 +332,17 @@ function getSport(event) {
 
 function sportLabel(sport) {
   const labels = {
-    football: 'Football',
-    cricket: 'Cricket',
-    f1: 'Formula 1',
-    wwe: 'WWE',
+    football:
+      'Football',
+
+    cricket:
+      'Cricket',
+
+    f1:
+      'Formula 1',
+
+    wwe:
+      'WWE',
   };
 
   return (
@@ -216,10 +354,17 @@ function sportLabel(sport) {
 
 function sportIcon(sport) {
   const icons = {
-    football: '⚽',
-    cricket: '🏏',
-    f1: '🏎️',
-    wwe: '🤼',
+    football:
+      '⚽',
+
+    cricket:
+      '🏏',
+
+    f1:
+      '🏎️',
+
+    wwe:
+      '🤼',
   };
 
   return (
@@ -230,17 +375,54 @@ function sportIcon(sport) {
 
 
 /* -------------------------------------------------------
-   FOLLOWING HELPERS
+   GENERIC SEARCH HELPERS
+
+   Used temporarily by Cricket until its own selectors
+   are implemented.
 ------------------------------------------------------- */
+
+function getParticipantNames(
+  event
+) {
+  if (
+    Array.isArray(
+      event?.participants
+    )
+  ) {
+    return event.participants
+      .flatMap(
+        (participant) => [
+          participant?.name,
+          participant?.shortName,
+          participant?.abbreviation,
+        ]
+      )
+      .filter(Boolean);
+  }
+
+
+  return [
+    event?.home?.name,
+    event?.away?.name,
+    event?.team?.name,
+  ].filter(Boolean);
+}
+
 
 function eventSearchText(event) {
   return [
-    event.home?.name,
-    event.away?.name,
-    event.team?.name,
-    event.title,
-    event.name,
-    event.detail,
+    ...getParticipantNames(
+      event
+    ),
+
+    event?.title,
+    event?.name,
+    event?.detail,
+
+    event?.competition
+      ?.name,
+
+    event?.leagueName,
   ]
     .filter(Boolean)
     .join(' ')
@@ -253,22 +435,28 @@ function matchesAliases(
   aliases = []
 ) {
   const text =
-    eventSearchText(event);
+    eventSearchText(
+      event
+    );
+
 
   return aliases.some(
     (alias) =>
       text.includes(
         String(alias)
           .toLowerCase()
+          .trim()
       )
   );
 }
 
 
-function isFollowedFootballEvent(
-  event
-) {
-  const teams = [
+/* -------------------------------------------------------
+   FOLLOWING
+------------------------------------------------------- */
+
+function getFootballTeams() {
+  return [
     ...(
       SPORTS_CONFIG
         .personal
@@ -283,15 +471,15 @@ function isFollowedFootballEvent(
       []
     ),
   ];
+}
 
 
-  return teams.some(
-    (team) =>
-      matchesAliases(
-        event,
-        team.aliases ||
-          [team.name]
-      )
+function isFollowedFootballEvent(
+  event
+) {
+  return eventMatchesAnyTeam(
+    event,
+    getFootballTeams()
   );
 }
 
@@ -299,14 +487,6 @@ function isFollowedFootballEvent(
 function isFollowedCricketEvent(
   event
 ) {
-  /*
-    Once cricket teams exist in config.js
-    they are used automatically.
-
-    The fallback names make the Watch
-    architecture ready for your CPL teams.
-  */
-
   const configuredTeams = [
     ...(
       SPORTS_CONFIG
@@ -324,7 +504,9 @@ function isFollowedCricketEvent(
   ];
 
 
-  if (configuredTeams.length) {
+  if (
+    configuredTeams.length
+  ) {
     return configuredTeams.some(
       (team) => {
         if (
@@ -337,15 +519,20 @@ function isFollowedCricketEvent(
           );
         }
 
+
         return matchesAliases(
           event,
           team.aliases ||
-            [team.name]
+          [team.name]
         );
       }
     );
   }
 
+
+  /*
+    Temporary CPL defaults.
+  */
 
   return matchesAliases(
     event,
@@ -364,13 +551,13 @@ function isFollowedEvent(
   watchlist
 ) {
   /*
-    Anything you manually star
-    always belongs in Watch.
+    Manually starred event.
   */
 
   if (
-    watchlist.includes(
-      event.id
+    isStarred(
+      event,
+      watchlist
     )
   ) {
     return true;
@@ -378,67 +565,68 @@ function isFollowedEvent(
 
 
   /*
-    Providers can directly mark
-    events as followed.
+    Provider/selector explicitly marks it.
   */
 
   if (
-    event.followed === true ||
-    event.isFollowed === true ||
-    event.priority === true
+    event?.followed ===
+      true ||
+    event?.isFollowed ===
+      true ||
+    event?.priority ===
+      true
   ) {
     return true;
   }
 
 
   const sport =
-    getSport(event);
+    getSport(
+      event
+    );
 
 
   if (
-    sport === 'football'
+    sport ===
+    'football'
   ) {
-    return (
-      isFollowedFootballEvent(
-        event
-      )
+    return isFollowedFootballEvent(
+      event
     );
   }
 
 
   /*
-    You follow F1 as a sport,
-    so F1 schedule events belong
-    automatically in Watch.
+    F1 is followed globally.
   */
 
   if (
-    sport === 'f1'
+    sport ===
+    'f1'
   ) {
     return true;
   }
 
 
   /*
-    RAW, SmackDown and PLEs
-    belong automatically once
-    dated WWE data is connected.
+    Raw, SmackDown and PLEs will all be followed once
+    WWE data is connected.
   */
 
   if (
-    sport === 'wwe'
+    sport ===
+    'wwe'
   ) {
     return true;
   }
 
 
   if (
-    sport === 'cricket'
+    sport ===
+    'cricket'
   ) {
-    return (
-      isFollowedCricketEvent(
-        event
-      )
+    return isFollowedCricketEvent(
+      event
     );
   }
 
@@ -448,7 +636,7 @@ function isFollowedEvent(
 
 
 /* -------------------------------------------------------
-   GROUPING
+   GROUP BY DATE
 ------------------------------------------------------- */
 
 function localDateKey(value) {
@@ -460,7 +648,8 @@ function localDateKey(value) {
 
   const month =
     String(
-      date.getMonth() + 1
+      date.getMonth() +
+        1
     ).padStart(
       2,
       '0'
@@ -474,22 +663,38 @@ function localDateKey(value) {
       '0'
     );
 
-
-  return `${year}-${month}-${day}`;
+  return (
+    `${year}-${month}-${day}`
+  );
 }
 
 
 function groupByDate(events) {
   return events.reduce(
-    (groups, event) => {
+    (
+      groups,
+      event
+    ) => {
+      const date =
+        getEventDate(
+          event
+        );
+
+
+      if (!date) {
+        return groups;
+      }
+
+
       const key =
         localDateKey(
-          event.date
+          date
         );
 
 
       if (!groups[key]) {
-        groups[key] = [];
+        groups[key] =
+          [];
       }
 
 
@@ -505,15 +710,25 @@ function groupByDate(events) {
 }
 
 
+/* -------------------------------------------------------
+   GROUP BY SPORT
+------------------------------------------------------- */
+
 function groupBySport(events) {
   return events.reduce(
-    (groups, event) => {
+    (
+      groups,
+      event
+    ) => {
       const sport =
-        getSport(event);
+        getSport(
+          event
+        );
 
 
       if (!groups[sport]) {
-        groups[sport] = [];
+        groups[sport] =
+          [];
       }
 
 
@@ -530,71 +745,59 @@ function groupBySport(events) {
 
 
 /* -------------------------------------------------------
-   FOOTBALL LEAGUE GROUPING
+   TEMPORARY SCHEDULE CARD ADAPTER
+
+   ScheduleEventCard itself will become universal during
+   the F1 / Cricket / WWE migration.
 ------------------------------------------------------- */
 
-function groupFootballByLeague(
-  events
+function toScheduleCardEvent(
+  event
 ) {
-  return events.reduce(
-    (groups, event) => {
-      const key =
-        event.leagueId ||
-        event.leagueName ||
-        event.competition ||
-        'football';
+  const date =
+    getEventDate(
+      event
+    );
 
 
-      const configuredLeague =
-        SPORTS_CONFIG
-          .soccerLeagues
-          ?.find(
-            (league) =>
-              league.id ===
-              event.leagueId
-          );
+  return {
+    ...event,
 
+    id:
+      getWatchlistId(
+        event
+      ),
 
-      if (!groups[key]) {
-        groups[key] = {
-          name:
-            configuredLeague
-              ?.name ||
-            event.leagueName ||
-            event.competition ||
-            event.league ||
-            'Football',
+    date,
 
-          short:
-            configuredLeague
-              ?.short ||
-            '',
+    title:
+      event?.title ||
+      event?.name ||
+      event?.competition
+        ?.name ||
+      sportLabel(
+        getSport(event)
+      ),
 
-          events: [],
-        };
-      }
+    leagueName:
+      event?.competition
+        ?.name ||
+      event?.leagueName ||
+      sportLabel(
+        getSport(event)
+      ),
 
-
-      groups[key]
-        .events
-        .push(event);
-
-
-      return groups;
-    },
-    {}
-  );
+    detail:
+      event?.status
+        ?.detail ||
+      event?.detail ||
+      '',
+  };
 }
 
 
 /* -------------------------------------------------------
    EVENT CARD
-
-   Team-vs-team sports:
-   MatchCard
-
-   Schedule-style events:
-   ScheduleEventCard
 ------------------------------------------------------- */
 
 function EventCard({
@@ -603,28 +806,37 @@ function EventCard({
   onToggleStar,
   onSaveNote,
 }) {
-  const isTeamMatch =
-    Boolean(
-      event.home &&
-      event.away
+  const sport =
+    getSport(
+      event
     );
 
 
-  if (isTeamMatch) {
+  if (
+    sport ===
+    'football'
+  ) {
     return (
       <MatchCard
-        event={event}
+        event={
+          event
+        }
+
         starred={
-          watchlist.includes(
-            event.id
+          isStarred(
+            event,
+            watchlist
           )
         }
+
         onToggleStar={
           onToggleStar
         }
+
         onSaveNote={
           onSaveNote
         }
+
         compact
       />
     );
@@ -633,14 +845,23 @@ function EventCard({
 
   return (
     <ScheduleEventCard
-      event={event}
-      starred={
-        watchlist.includes(
-          event.id
+      event={
+        toScheduleCardEvent(
+          event
         )
       }
-      onToggleStar={
-        onToggleStar
+
+      starred={
+        isStarred(
+          event,
+          watchlist
+        )
+      }
+
+      onToggleStar={() =>
+        onToggleStar?.(
+          event
+        )
       }
     />
   );
@@ -648,7 +869,7 @@ function EventCard({
 
 
 /* -------------------------------------------------------
-   WATCH PAGE
+   WATCH
 ------------------------------------------------------- */
 
 export default function WatchPage({
@@ -660,7 +881,9 @@ export default function WatchPage({
   const [
     activeTab,
     setActiveTab,
-  ] = useState('today');
+  ] = useState(
+    'today'
+  );
 
 
   const today =
@@ -670,59 +893,70 @@ export default function WatchPage({
 
 
   /* -----------------------------------------------------
-     ONLY EVENTS RELEVANT TO YOU
+     FOLLOWED / STARRED EVENTS
   ----------------------------------------------------- */
 
   const followedEvents =
-    useMemo(() => {
-      return events
-        .filter(
-          (event) =>
-            event?.id &&
-            event?.date
-        )
-
-        .filter(
-          (event) =>
-            isFollowedEvent(
-              event,
-              watchlist
-            )
-        )
-
-        .sort(
-          (a, b) =>
-            new Date(
-              a.date
-            ).getTime() -
-            new Date(
-              b.date
-            ).getTime()
-        );
-    }, [
-      events,
-      watchlist,
-    ]);
+    useMemo(
+      () =>
+        events
+          .filter(
+            (event) =>
+              event?.id &&
+              getEventDate(
+                event
+              )
+          )
+          .filter(
+            (event) =>
+              isFollowedEvent(
+                event,
+                watchlist
+              )
+          )
+          .sort(
+            (
+              first,
+              second
+            ) =>
+              new Date(
+                getEventDate(
+                  first
+                )
+              ).getTime() -
+              new Date(
+                getEventDate(
+                  second
+                )
+              ).getTime()
+          ),
+      [
+        events,
+        watchlist,
+      ]
+    );
 
 
   /* -----------------------------------------------------
-     DATE FILTER
+     ACTIVE DATE
   ----------------------------------------------------- */
 
   const visibleEvents =
-    useMemo(() => {
-      return followedEvents.filter(
-        (event) =>
-          eventMatchesTab(
-            event,
-            activeTab,
-            today
-          )
-      );
-    }, [
-      followedEvents,
-      activeTab,
-    ]);
+    useMemo(
+      () =>
+        followedEvents.filter(
+          (event) =>
+            eventMatchesTab(
+              event,
+              activeTab,
+              today
+            )
+        ),
+      [
+        followedEvents,
+        activeTab,
+      ]
+    );
 
 
   const dayGroups =
@@ -731,7 +965,9 @@ export default function WatchPage({
         groupByDate(
           visibleEvents
         ),
-      [visibleEvents]
+      [
+        visibleEvents,
+      ]
     );
 
 
@@ -758,12 +994,10 @@ export default function WatchPage({
   ];
 
 
-  /* -----------------------------------------------------
-     RENDER
-  ----------------------------------------------------- */
-
   return (
     <div className="page-stack">
+
+      {/* HEADER */}
 
       <div className="page-heading">
 
@@ -771,20 +1005,21 @@ export default function WatchPage({
           MY SPORTS
         </p>
 
+
         <h1>
           Watch
         </h1>
 
+
         <p>
-          Your followed teams,
-          sports and starred
-          events organized by day.
+          Your followed teams, sports and starred events
+          organized by day.
         </p>
 
       </div>
 
 
-      {/* DAY TABS */}
+      {/* DATE TABS */}
 
       <div className="watch-tabs">
 
@@ -795,12 +1030,14 @@ export default function WatchPage({
           ]) => (
 
             <button
-              key={key}
+              key={
+                key
+              }
 
               className={
                 `watch-tab ${
                   activeTab ===
-                  key
+                    key
                     ? 'is-active'
                     : ''
                 }`
@@ -821,13 +1058,12 @@ export default function WatchPage({
       </div>
 
 
-      {/* EMPTY DAY */}
+      {/* EMPTY */}
 
       {!visibleEvents.length && (
 
         <div className="empty-state">
-          Nothing you follow is
-          scheduled for this day.
+          Nothing you follow is scheduled for this day.
         </div>
 
       )}
@@ -840,14 +1076,13 @@ export default function WatchPage({
       )
         .sort(
           (
-            [a],
-            [b]
+            [first],
+            [second]
           ) =>
-            a.localeCompare(
-              b
+            first.localeCompare(
+              second
             )
         )
-
         .map(
           ([
             day,
@@ -861,10 +1096,12 @@ export default function WatchPage({
 
 
             return (
-
               <div
                 className="watch-day"
-                key={day}
+
+                key={
+                  day
+                }
               >
 
                 {/* DATE */}
@@ -874,8 +1111,9 @@ export default function WatchPage({
                   <p className="eyebrow">
 
                     {formatLocalDateTime(
-                      dayEvents[0]
-                        .date,
+                      getEventDate(
+                        dayEvents[0]
+                      ),
                       {
                         weekday:
                           'long',
@@ -903,8 +1141,8 @@ export default function WatchPage({
 
                     {dayEvents.length ===
                     1
-                      ? 'event'
-                      : 'events'}
+                      ? 'to watch'
+                      : 'to watch'}
 
                   </h2>
 
@@ -913,191 +1151,198 @@ export default function WatchPage({
 
                 {/* SPORTS */}
 
-                {Object.entries(
-                  sports
-                ).map(
-                  ([
-                    sport,
-                    sportEvents,
-                  ]) => {
+                {SPORT_ORDER
+                  .filter(
+                    (sport) =>
+                      sports[sport]
+                        ?.length
+                  )
+                  .map(
+                    (sport) => {
+                      const sportEvents =
+                        sports[sport];
 
 
-                    /* -------------------------
-                       FOOTBALL
-                    ------------------------- */
+                      /* -------------------------------
+                         FOOTBALL
+                      ------------------------------- */
 
-                    if (
-                      sport ===
-                      'football'
-                    ) {
+                      if (
+                        sport ===
+                        'football'
+                      ) {
+                        const competitions =
+                          getFootballCompetitionGroups(
+                            sportEvents
+                          );
 
-                      const leagues =
-                        groupFootballByLeague(
-                          sportEvents
+
+                        return (
+                          <Section
+                            key={
+                              sport
+                            }
+
+                            eyebrow="FOOTBALL"
+
+                            title="⚽ Football"
+                          >
+
+                            <div className="watch-league-stack">
+
+                              {competitions.map(
+                                (competition) => (
+
+                                  <div
+                                    className="watch-league"
+
+                                    key={
+                                      competition.id
+                                    }
+                                  >
+
+                                    <div className="watch-league-heading">
+
+                                      <strong>
+                                        {competition.name}
+                                      </strong>
+
+
+                                      <span className="watch-league-count">
+                                        {
+                                          competition.events.length
+                                        }
+                                      </span>
+
+                                    </div>
+
+
+                                    <div className="card-list">
+
+                                      {competition.events.map(
+                                        (event) => (
+
+                                          <EventCard
+                                            key={
+                                              event.id
+                                            }
+
+                                            event={
+                                              event
+                                            }
+
+                                            watchlist={
+                                              watchlist
+                                            }
+
+                                            onToggleStar={
+                                              onToggleStar
+                                            }
+
+                                            onSaveNote={
+                                              onSaveNote
+                                            }
+                                          />
+
+                                        )
+                                      )}
+
+                                    </div>
+
+                                  </div>
+
+                                )
+                              )}
+
+                            </div>
+
+                          </Section>
                         );
+                      }
 
+
+                      /* -------------------------------
+                         OTHER SPORTS
+                      ------------------------------- */
 
                       return (
-
                         <Section
-                          key={sport}
-                          eyebrow="FOOTBALL"
-                          title="⚽ Football"
+                          key={
+                            sport
+                          }
+
+                          eyebrow={
+                            sportLabel(
+                              sport
+                            )
+                              .toUpperCase()
+                          }
+
+                          title={
+                            `${sportIcon(
+                              sport
+                            )} ${sportLabel(
+                              sport
+                            )}`
+                          }
                         >
 
-                          <div className="watch-league-stack">
+                          <div className="card-list">
 
-                            {Object.entries(
-                              leagues
-                            ).map(
-                              ([
-                                leagueKey,
-                                league,
-                              ]) => (
-
-                                <div
-                                  className="watch-league"
-                                  key={
-                                    leagueKey
-                                  }
-                                >
-
-                                  <div className="watch-league-heading">
-
-                                    <strong>
-                                      {
-                                        league.name
-                                      }
-                                    </strong>
-
-
-                                    <span className="watch-league-count">
-
-                                      {
-                                        league
-                                          .events
-                                          .length
-                                      }
-
-                                    </span>
-
-                                  </div>
-
-
-                                  <div className="card-list">
-
-                                    {league.events.map(
-                                      (
-                                        event
-                                      ) => (
-
-                                        <EventCard
-                                          key={
-                                            event.id
-                                          }
-
-                                          event={
-                                            event
-                                          }
-
-                                          watchlist={
-                                            watchlist
-                                          }
-
-                                          onToggleStar={
-                                            onToggleStar
-                                          }
-
-                                          onSaveNote={
-                                            onSaveNote
-                                          }
-                                        />
-
-                                      )
-                                    )}
-
-                                  </div>
-
-                                </div>
-
+                            {sportEvents
+                              .sort(
+                                (
+                                  first,
+                                  second
+                                ) =>
+                                  new Date(
+                                    getEventDate(
+                                      first
+                                    )
+                                  ).getTime() -
+                                  new Date(
+                                    getEventDate(
+                                      second
+                                    )
+                                  ).getTime()
                               )
-                            )}
+                              .map(
+                                (event) => (
+
+                                  <EventCard
+                                    key={
+                                      event.id
+                                    }
+
+                                    event={
+                                      event
+                                    }
+
+                                    watchlist={
+                                      watchlist
+                                    }
+
+                                    onToggleStar={
+                                      onToggleStar
+                                    }
+
+                                    onSaveNote={
+                                      onSaveNote
+                                    }
+                                  />
+
+                                )
+                              )}
 
                           </div>
 
                         </Section>
-
                       );
                     }
-
-
-                    /* -------------------------
-                       F1 / CRICKET / WWE
-                    ------------------------- */
-
-                    return (
-
-                      <Section
-                        key={sport}
-
-                        eyebrow={
-                          sportLabel(
-                            sport
-                          ).toUpperCase()
-                        }
-
-                        title={
-                          `${sportIcon(
-                            sport
-                          )} ${sportLabel(
-                            sport
-                          )}`
-                        }
-                      >
-
-                        <div className="card-list">
-
-                          {sportEvents.map(
-                            (event) => (
-
-                              <EventCard
-                                key={
-                                  event.id
-                                }
-
-                                event={
-                                  event
-                                }
-
-                                watchlist={
-                                  watchlist
-                                }
-
-                                onToggleStar={
-                                  onToggleStar
-                                }
-
-                                onSaveNote={
-                                  onSaveNote
-                                }
-                              />
-
-                            )
-                          )}
-
-                        </div>
-
-                      </Section>
-
-                    );
-
-                  }
-                )}
+                  )}
 
               </div>
-
             );
-
           }
         )}
 
