@@ -1,14 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import BottomNav from './components/BottomNav.jsx';
 import SportsDrawer from './components/SportsDrawer.jsx';
 import TopBar from './components/TopBar.jsx';
 
-import { SPORTS_CONFIG } from './data/config.js';
-import { DEMO_F1, DEMO_FOOTBALL } from './data/demo.js';
+import {
+  SPORTS_CONFIG,
+} from './data/config.js';
 
-import { useHashRoute } from './hooks/useHashRoute.js';
-import { useLocalStorage } from './hooks/useLocalStorage.js';
+import {
+  DEMO_F1,
+  DEMO_FOOTBALL,
+} from './data/demo.js';
+
+import {
+  useHashRoute,
+} from './hooks/useHashRoute.js';
+
+import {
+  useLocalStorage,
+} from './hooks/useLocalStorage.js';
 
 import ContentPage from './pages/ContentPage.jsx';
 import CricketPage from './pages/CricketPage.jsx';
@@ -23,10 +38,18 @@ import WWEPage from './pages/WWEPage.jsx';
 
 import {
   fetchF1Scoreboard,
-  fetchSoccerScoreboards,
 } from './services/espn.js';
 
-import { fetchFplEntry } from './services/fpl.js';
+import {
+  fetchFootballScoreboards,
+  normalizeFootballLeagues,
+  toLegacyFootballEvents,
+  fromLegacyFootballEvents,
+} from './services/football/index.js';
+
+import {
+  fetchFplEntry,
+} from './services/fpl.js';
 
 
 /* -------------------------------------------------------
@@ -34,55 +57,82 @@ import { fetchFplEntry } from './services/fpl.js';
 ------------------------------------------------------- */
 
 const routeTitles = {
-  home: ['SPORTS HQ', 'personal dashboard'],
-  football: ['FOOTBALL', 'scores + watchlist'],
-  f1: ['FORMULA 1', 'race weekend'],
-  wwe: ['WWE', 'shows + storylines'],
-  cricket: ['CRICKET', 'CPL + followed teams'],
-  competitions: ['COMPETITIONS', 'major tournaments'],
-  fpl: ['FANTASY', 'Roti Boys FC'],
-  watch: ['WATCH', 'your schedule'],
-  content: ['CONTENT HQ', 'saved takes'],
-  settings: ['SETTINGS', 'local preferences'],
+  home: [
+    'SPORTS HQ',
+    'personal dashboard',
+  ],
+
+  football: [
+    'FOOTBALL',
+    'scores + watchlist',
+  ],
+
+  f1: [
+    'FORMULA 1',
+    'race weekend',
+  ],
+
+  wwe: [
+    'WWE',
+    'shows + storylines',
+  ],
+
+  cricket: [
+    'CRICKET',
+    'CPL + followed teams',
+  ],
+
+  competitions: [
+    'COMPETITIONS',
+    'major tournaments',
+  ],
+
+  fpl: [
+    'FANTASY',
+    'Roti Boys FC',
+  ],
+
+  watch: [
+    'WATCH',
+    'your schedule',
+  ],
+
+  content: [
+    'CONTENT HQ',
+    'saved takes',
+  ],
+
+  settings: [
+    'SETTINGS',
+    'local preferences',
+  ],
 };
 
 
 /* -------------------------------------------------------
-   EVENT NORMALIZERS
+   TEMPORARY F1 WATCH NORMALIZER
 
-   Watch should not care where data came from.
-   Every provider becomes a Sports HQ event.
+   F1 will get its own v0.3 universal normalizer later.
 ------------------------------------------------------- */
 
-function normalizeFootballEvents(events = []) {
-  return events.map((event) => ({
-    ...event,
-    sport: 'football',
-  }));
-}
+function normalizeF1Events(
+  data
+) {
+  if (!data) {
+    return [];
+  }
 
 
-/*
-  F1 FIX
+  /*
+    Current / next F1 weekend.
+  */
 
-  The existing F1 service can return a current/next event
-  as data.event rather than an array of events.
+  if (
+    data.event?.date
+  ) {
+    const event =
+      data.event;
 
-  This normalizer supports:
-  - data.event
-  - data.events
-  - data.sessions
-
-  That keeps the architecture flexible if the provider
-  changes later.
-*/
-
-function normalizeF1Events(data) {
-  if (!data) return [];
-
-  /* Current / next F1 event */
-  if (data.event?.date) {
-    const event = data.event;
 
     return [
       {
@@ -92,17 +142,22 @@ function normalizeF1Events(data) {
           event.id ||
           `f1-${event.date}-${event.name || 'event'}`,
 
-        sport: 'f1',
-        type: 'schedule',
+        sport:
+          'f1',
 
-        date: event.date,
+        type:
+          'schedule',
+
+        date:
+          event.date,
 
         title:
           event.name ||
           event.title ||
           'Formula 1',
 
-        leagueName: 'Formula 1',
+        leagueName:
+          'Formula 1',
 
         status:
           event.status ||
@@ -111,22 +166,33 @@ function normalizeF1Events(data) {
         detail:
           event.detail ||
           event.shortDetail ||
+          event.nextSession?.name ||
           'Race weekend',
 
-        followed: true,
+        followed:
+          true,
 
-        raw: event,
+        raw:
+          event,
       },
     ];
   }
 
 
-  /* Future support for session/event arrays */
-  const sourceEvents = Array.isArray(data.events)
-    ? data.events
-    : Array.isArray(data.sessions)
-      ? data.sessions
-      : [];
+  /*
+    Future support for arrays of sessions/events.
+  */
+
+  const sourceEvents =
+    Array.isArray(
+      data.events
+    )
+      ? data.events
+      : Array.isArray(
+          data.sessions
+        )
+        ? data.sessions
+        : [];
 
 
   return sourceEvents
@@ -135,44 +201,55 @@ function normalizeF1Events(data) {
         event?.date ||
         event?.startTime
     )
-    .map((event, index) => {
-      const date =
-        event.date ||
-        event.startTime;
+    .map(
+      (
+        event,
+        index
+      ) => {
+        const date =
+          event.date ||
+          event.startTime;
 
-      return {
-        ...event,
 
-        id:
-          event.id ||
-          `f1-${date}-${event.name || event.title || index}`,
+        return {
+          ...event,
 
-        sport: 'f1',
-        type: 'schedule',
+          id:
+            event.id ||
+            `f1-${date}-${event.name || event.title || index}`,
 
-        date,
+          sport:
+            'f1',
 
-        title:
-          event.title ||
-          event.name ||
-          event.sessionName ||
-          'Formula 1',
+          type:
+            'schedule',
 
-        leagueName: 'Formula 1',
+          date,
 
-        status:
-          event.status ||
-          'scheduled',
+          title:
+            event.title ||
+            event.name ||
+            event.sessionName ||
+            'Formula 1',
 
-        detail:
-          event.detail ||
-          event.shortDetail ||
-          event.sessionName ||
-          'Race weekend',
+          leagueName:
+            'Formula 1',
 
-        followed: true,
-      };
-    });
+          status:
+            event.status ||
+            'scheduled',
+
+          detail:
+            event.detail ||
+            event.shortDetail ||
+            event.sessionName ||
+            'Race weekend',
+
+          followed:
+            true,
+        };
+      }
+    );
 }
 
 
@@ -181,191 +258,430 @@ function normalizeF1Events(data) {
 ------------------------------------------------------- */
 
 export default function App() {
-  const [route, setRoute] = useHashRoute();
+  const [
+    route,
+    setRoute,
+  ] = useHashRoute();
 
-  const [drawerOpen, setDrawerOpen] =
-    useState(false);
 
-  const [watchlist, setWatchlist] =
-    useLocalStorage(
-      'sportsHQ.watchlist',
-      []
-    );
+  const [
+    drawerOpen,
+    setDrawerOpen,
+  ] = useState(false);
 
-  const [notes, setNotes] =
-    useLocalStorage(
-      'sportsHQ.notes',
-      []
-    );
 
-  const [fplEntryId, setFplEntryId] =
-    useLocalStorage(
-      'sportsHQ.fplEntryId',
-      ''
-    );
+  const [
+    watchlist,
+    setWatchlist,
+  ] = useLocalStorage(
+    'sportsHQ.watchlist',
+    []
+  );
+
+
+  const [
+    notes,
+    setNotes,
+  ] = useLocalStorage(
+    'sportsHQ.notes',
+    []
+  );
+
+
+  const [
+    fplEntryId,
+    setFplEntryId,
+  ] = useLocalStorage(
+    'sportsHQ.fplEntryId',
+    ''
+  );
 
 
   /* -----------------------------------------------------
-     FOOTBALL
+     FOOTBALL v0.3
   ----------------------------------------------------- */
 
-  const [football, setFootball] =
-    useState([]);
+  const [
+    footballV3,
+    setFootballV3,
+  ] = useState([]);
+
+
+  const [
+    footballFallback,
+    setFootballFallback,
+  ] = useState(null);
+
 
   const [
     footballMode,
     setFootballMode,
-  ] = useState('loading');
+  ] = useState(
+    'loading'
+  );
+
 
   const [
     footballNotice,
     setFootballNotice,
-  ] = useState('');
+  ] = useState(
+    ''
+  );
 
 
   /* -----------------------------------------------------
      FORMULA 1
   ----------------------------------------------------- */
 
-  const [f1, setF1] =
-    useState(null);
+  const [
+    f1,
+    setF1,
+  ] = useState(null);
+
 
   const [
     f1Mode,
     setF1Mode,
-  ] = useState('loading');
+  ] = useState(
+    'loading'
+  );
+
 
   const [
     f1Notice,
     setF1Notice,
-  ] = useState('');
+  ] = useState(
+    ''
+  );
 
 
   /* -----------------------------------------------------
      CRICKET
 
-     Empty until CPL data is connected.
+     Empty until Cricket v0.3 is connected.
   ----------------------------------------------------- */
 
-  const [cricketEvents] =
-    useState([]);
+  const [
+    cricketEvents,
+  ] = useState([]);
 
 
   /* -----------------------------------------------------
      WWE
 
-     Empty until dated RAW / SmackDown / PLE schedule
-     data is connected.
+     Empty until WWE v0.3 is connected.
   ----------------------------------------------------- */
 
-  const [wweEvents] =
-    useState([]);
+  const [
+    wweEvents,
+  ] = useState([]);
 
 
   /* -----------------------------------------------------
      FANTASY
   ----------------------------------------------------- */
 
-  const [fpl, setFpl] =
-    useState(null);
+  const [
+    fpl,
+    setFpl,
+  ] = useState(null);
+
 
   const [
     fplMode,
     setFplMode,
-  ] = useState('idle');
+  ] = useState(
+    'idle'
+  );
+
 
   const [
     fplNotice,
     setFplNotice,
-  ] = useState('');
+  ] = useState(
+    ''
+  );
 
 
   /* -----------------------------------------------------
-     LOAD FOOTBALL + F1
+     LOAD FOOTBALL v0.3
   ----------------------------------------------------- */
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled =
+      false;
 
 
-    /* FOOTBALL */
+    setFootballMode(
+      'loading'
+    );
 
-    setFootballMode('loading');
+    setFootballNotice(
+      ''
+    );
 
-    fetchSoccerScoreboards(
+
+    fetchFootballScoreboards(
       SPORTS_CONFIG.soccerLeagues
     )
       .then(
-        ({
-          events,
-          partialErrors,
-        }) => {
-          if (cancelled) return;
+        (
+          providerResult
+        ) => {
+          if (
+            cancelled
+          ) {
+            return;
+          }
 
-          setFootball(events);
-          setFootballMode('live');
+
+          const normalized =
+            normalizeFootballLeagues(
+              providerResult
+            );
+
+
+          if (
+            !normalized.length
+          ) {
+            throw new Error(
+              'No football events were returned.'
+            );
+          }
+
+
+          setFootballV3(
+            normalized
+          );
+
+
+          setFootballFallback(
+            null
+          );
+
+
+          setFootballMode(
+            'live'
+          );
+
+
+          /* -------------------------------------------
+             PROVIDER HEALTH
+          ------------------------------------------- */
+
+          const messages =
+            [];
+
+
+          if (
+            providerResult.errors
+              ?.length
+          ) {
+            const unavailable =
+              providerResult.errors
+                .map(
+                  (item) =>
+                    item.leagueName
+                )
+                .join(
+                  ' · '
+                );
+
+
+            messages.push(
+              `Some leagues were unavailable: ${unavailable}.`
+            );
+          }
+
+
+          const staleLeagues =
+            providerResult.leagues
+              ?.filter(
+                (item) =>
+                  item.result
+                    ?.meta
+                    ?.stale
+              ) ||
+            [];
+
+
+          if (
+            staleLeagues.length
+          ) {
+            const names =
+              staleLeagues
+                .map(
+                  (item) =>
+                    item.league
+                      .name
+                )
+                .join(
+                  ' · '
+                );
+
+
+            messages.push(
+              `Using last-known data for ${names}.`
+            );
+          }
+
+
+          const cachedLeagues =
+            providerResult.leagues
+              ?.filter(
+                (item) =>
+                  item.result
+                    ?.meta
+                    ?.mode ===
+                  'cache'
+              ) ||
+            [];
+
+
+          if (
+            cachedLeagues.length &&
+            cachedLeagues.length ===
+              providerResult
+                .leagues
+                .length
+          ) {
+            messages.push(
+              'Football data loaded from the local Sports HQ cache.'
+            );
+          }
+
 
           setFootballNotice(
-            partialErrors.length
-              ? `Some leagues were unavailable: ${partialErrors.join(
-                  ' · '
-                )}`
-              : ''
+            messages.join(
+              ' '
+            )
           );
         }
       )
-      .catch(() => {
-        if (cancelled) return;
-
-        setFootball(
-          DEMO_FOOTBALL
-        );
-
-        setFootballMode(
-          'demo'
-        );
-
-        setFootballNotice(
-          'The browser could not reach the free football feed. Demo data is shown so the interface remains usable.'
-        );
-      });
+      .catch(
+        (
+          error
+        ) => {
+          if (
+            cancelled
+          ) {
+            return;
+          }
 
 
-    /* FORMULA 1 */
+          console.error(
+            '[Sports HQ Football]',
+            error
+          );
 
-    setF1Mode('loading');
 
-    fetchF1Scoreboard()
-      .then((data) => {
-        if (cancelled) return;
+          setFootballV3(
+            []
+          );
 
-        setF1(data);
 
-        setF1Mode(
-          'live'
-        );
+          setFootballFallback(
+            DEMO_FOOTBALL
+          );
 
-        setF1Notice('');
-      })
-      .catch(() => {
-        if (cancelled) return;
 
-        setF1(
-          DEMO_F1
-        );
+          setFootballMode(
+            'demo'
+          );
 
-        setF1Mode(
-          'demo'
-        );
 
-        setF1Notice(
-          'The F1 feed could not be reached. Demo data is shown.'
-        );
-      });
+          setFootballNotice(
+            'Football data could not be reached. Demo data is shown so Sports HQ remains usable.'
+          );
+        }
+      );
 
 
     return () => {
-      cancelled = true;
+      cancelled =
+        true;
+    };
+  }, []);
+
+
+  /* -----------------------------------------------------
+     LOAD FORMULA 1
+  ----------------------------------------------------- */
+
+  useEffect(() => {
+    let cancelled =
+      false;
+
+
+    setF1Mode(
+      'loading'
+    );
+
+
+    fetchF1Scoreboard()
+      .then(
+        (
+          data
+        ) => {
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+
+          setF1(
+            data
+          );
+
+
+          setF1Mode(
+            'live'
+          );
+
+
+          setF1Notice(
+            ''
+          );
+        }
+      )
+      .catch(
+        (
+          error
+        ) => {
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+
+          console.error(
+            '[Sports HQ F1]',
+            error
+          );
+
+
+          setF1(
+            DEMO_F1
+          );
+
+
+          setF1Mode(
+            'demo'
+          );
+
+
+          setF1Notice(
+            'The F1 feed could not be reached. Demo data is shown.'
+          );
+        }
+      );
+
+
+    return () => {
+      cancelled =
+        true;
     };
   }, []);
 
@@ -375,112 +691,163 @@ export default function App() {
   ----------------------------------------------------- */
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled =
+      false;
 
-    if (!fplEntryId) {
-      setFpl(null);
-      setFplMode('idle');
-      setFplNotice('');
+
+    if (
+      !fplEntryId
+    ) {
+      setFpl(
+        null
+      );
+
+      setFplMode(
+        'idle'
+      );
+
+      setFplNotice(
+        ''
+      );
 
       return undefined;
     }
 
-    setFplMode('loading');
-    setFplNotice('');
+
+    setFplMode(
+      'loading'
+    );
+
+    setFplNotice(
+      ''
+    );
+
 
     fetchFplEntry(
       fplEntryId
     )
-      .then((data) => {
-        if (cancelled) return;
+      .then(
+        (
+          data
+        ) => {
+          if (
+            cancelled
+          ) {
+            return;
+          }
 
-        setFpl(data);
-        setFplMode('live');
-      })
-      .catch((error) => {
-        if (cancelled) return;
 
-        setFpl(null);
-        setFplMode('error');
+          setFpl(
+            data
+          );
 
-        setFplNotice(
-          `${error.message} If the browser blocks direct FPL requests, we can add a free GitHub Action cache next.`
-        );
-      });
+
+          setFplMode(
+            'live'
+          );
+        }
+      )
+      .catch(
+        (
+          error
+        ) => {
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+
+          setFpl(
+            null
+          );
+
+
+          setFplMode(
+            'error'
+          );
+
+
+          setFplNotice(
+            `${error.message} Sports HQ will move FPL through the cached data layer during the Fantasy overhaul.`
+          );
+        }
+      );
+
 
     return () => {
-      cancelled = true;
+      cancelled =
+        true;
     };
-  }, [fplEntryId]);
+  }, [
+    fplEntryId,
+  ]);
 
 
   /* -----------------------------------------------------
-     WATCHLIST
-  ----------------------------------------------------- */
+     LEGACY FOOTBALL FEED
 
-  const toggleStar = (event) => {
-    if (!event?.id) return;
-
-    setWatchlist(
-      (current) =>
-        current.includes(
-          event.id
-        )
-          ? current.filter(
-              (id) =>
-                id !==
-                event.id
-            )
-          : [
-              ...current,
-              event.id,
-            ]
-    );
-  };
-
-
-  /* -----------------------------------------------------
-     NOTES
-  ----------------------------------------------------- */
-
-  const saveNote = (note) => {
-    setNotes(
-      (current) => [
-        ...current,
-        {
-          ...note,
-          id: crypto.randomUUID(),
-        },
-      ]
-    );
-  };
-
-
-  /* -----------------------------------------------------
-     UNIFIED SPORTS HQ EVENT FEED
-
-     Football
-        +
-     Formula 1
-        +
-     Cricket
-        +
-     WWE
-
-        ↓
-
-     Home / Watch / future calendar
+     Home and Watch still temporarily use this format.
   ----------------------------------------------------- */
 
   const footballEvents =
     useMemo(
-      () =>
-        normalizeFootballEvents(
-          football
-        ),
-      [football]
+      () => {
+        if (
+          footballFallback
+        ) {
+          return footballFallback;
+        }
+
+
+        return toLegacyFootballEvents(
+          footballV3
+        );
+      },
+      [
+        footballV3,
+        footballFallback,
+      ]
     );
 
+
+  /* -----------------------------------------------------
+     UNIVERSAL FOOTBALL FEED
+
+     FootballPage now consumes this directly.
+  ----------------------------------------------------- */
+
+  const footballUniversalEvents =
+    useMemo(
+      () => {
+        if (
+          footballV3.length
+        ) {
+          return footballV3;
+        }
+
+
+        if (
+          footballFallback
+        ) {
+          return fromLegacyFootballEvents(
+            footballFallback
+          );
+        }
+
+
+        return [];
+      },
+      [
+        footballV3,
+        footballFallback,
+      ]
+    );
+
+
+  /* -----------------------------------------------------
+     F1 EVENTS FOR WATCH
+  ----------------------------------------------------- */
 
   const f1Events =
     useMemo(
@@ -488,37 +855,130 @@ export default function App() {
         normalizeF1Events(
           f1
         ),
-      [f1]
+      [
+        f1,
+      ]
     );
 
 
+  /* -----------------------------------------------------
+     TEMPORARY WATCH FEED
+
+     Football still enters Watch using legacy shape.
+
+     Watch will later move to the universal event model.
+  ----------------------------------------------------- */
+
   const allEvents =
-    useMemo(() => {
-      return [
-        ...footballEvents,
-        ...f1Events,
-        ...cricketEvents,
-        ...wweEvents,
+    useMemo(
+      () =>
+        [
+          ...footballEvents,
+
+          ...f1Events,
+
+          ...cricketEvents,
+
+          ...wweEvents,
+        ]
+          .filter(
+            (event) =>
+              event?.date
+          )
+          .sort(
+            (
+              a,
+              b
+            ) =>
+              new Date(
+                a.date
+              ).getTime() -
+              new Date(
+                b.date
+              ).getTime()
+          ),
+      [
+        footballEvents,
+        f1Events,
+        cricketEvents,
+        wweEvents,
       ]
-        .filter(
-          (event) =>
-            event?.date
-        )
-        .sort(
-          (a, b) =>
-            new Date(
-              a.date
-            ).getTime() -
-            new Date(
-              b.date
-            ).getTime()
-        );
-    }, [
-      footballEvents,
-      f1Events,
-      cricketEvents,
-      wweEvents,
-    ]);
+    );
+
+
+  /* -----------------------------------------------------
+     WATCHLIST
+  ----------------------------------------------------- */
+
+  const toggleStar =
+    (
+      event
+    ) => {
+      /*
+        Universal Football events use a Sports HQ ID,
+        but existing watchlists use the ESPN provider ID.
+
+        Preserve the provider ID during migration.
+      */
+
+      const id =
+        event?.source
+          ?.providerId ||
+        event?.id;
+
+
+      if (
+        !id
+      ) {
+        return;
+      }
+
+
+      setWatchlist(
+        (
+          current
+        ) =>
+          current.includes(
+            id
+          )
+            ? current.filter(
+                (
+                  savedId
+                ) =>
+                  savedId !==
+                  id
+              )
+            : [
+                ...current,
+                id,
+              ]
+      );
+    };
+
+
+  /* -----------------------------------------------------
+     NOTES
+  ----------------------------------------------------- */
+
+  const saveNote =
+    (
+      note
+    ) => {
+      setNotes(
+        (
+          current
+        ) => [
+          ...current,
+
+          {
+            ...note,
+
+            id:
+              crypto.randomUUID(),
+          },
+        ]
+      );
+    };
 
 
   /* -----------------------------------------------------
@@ -526,44 +986,69 @@ export default function App() {
   ----------------------------------------------------- */
 
   const title =
-    routeTitles[route] ||
+    routeTitles[
+      route
+    ] ||
     routeTitles.home;
 
 
   const shared = {
     watchlist,
+
     onToggleStar:
       toggleStar,
+
     onSaveNote:
       saveNote,
   };
 
 
   const page = (() => {
-    switch (route) {
+    switch (
+      route
+    ) {
+
+      /* -----------------------------------------------
+         FOOTBALL
+
+         Now uses universal Sports HQ events directly.
+      ----------------------------------------------- */
 
       case 'football':
         return (
           <FootballPage
             events={
-              footballEvents
+              footballUniversalEvents
             }
+
             mode={
               footballMode
             }
+
             notice={
               footballNotice
             }
+
             {...shared}
           />
         );
 
 
+      /* -----------------------------------------------
+         FORMULA 1
+      ----------------------------------------------- */
+
       case 'f1':
         return (
           <F1Page
-            data={f1}
-            mode={f1Mode}
+            data={
+              f1
+            }
+
+            mode={
+              f1Mode
+            }
+
             notice={
               f1Notice
             }
@@ -571,16 +1056,25 @@ export default function App() {
         );
 
 
+      /* -----------------------------------------------
+         WWE
+      ----------------------------------------------- */
+
       case 'wwe':
         return (
           <WWEPage
             events={
               wweEvents
             }
+
             {...shared}
           />
         );
 
+
+      /* -----------------------------------------------
+         CRICKET
+      ----------------------------------------------- */
 
       case 'cricket':
         return (
@@ -588,24 +1082,35 @@ export default function App() {
             events={
               cricketEvents
             }
+
             {...shared}
           />
         );
 
 
+      /* -----------------------------------------------
+         FANTASY
+      ----------------------------------------------- */
+
       case 'fpl':
         return (
           <FplPage
-            data={fpl}
+            data={
+              fpl
+            }
+
             mode={
               fplMode
             }
+
             notice={
               fplNotice
             }
+
             entryId={
               fplEntryId
             }
+
             onGoSettings={() =>
               setRoute(
                 'settings'
@@ -615,16 +1120,27 @@ export default function App() {
         );
 
 
+      /* -----------------------------------------------
+         WATCH
+
+         Still receives migration-format events.
+      ----------------------------------------------- */
+
       case 'watch':
         return (
           <WatchPage
             events={
               allEvents
             }
+
             {...shared}
           />
         );
 
+
+      /* -----------------------------------------------
+         COMPETITIONS
+      ----------------------------------------------- */
 
       case 'competitions':
         return (
@@ -636,32 +1152,45 @@ export default function App() {
         );
 
 
+      /* -----------------------------------------------
+         CONTENT
+      ----------------------------------------------- */
+
       case 'content':
         return (
           <ContentPage
-            notes={notes}
+            notes={
+              notes
+            }
+
             onSaveNote={
               saveNote
             }
-            onDeleteNote={(
-              id
-            ) =>
-              setNotes(
-                (
-                  current
-                ) =>
-                  current.filter(
-                    (
-                      note
-                    ) =>
-                      note.id !==
-                      id
-                  )
-              )
+
+            onDeleteNote={
+              (
+                id
+              ) =>
+                setNotes(
+                  (
+                    current
+                  ) =>
+                    current.filter(
+                      (
+                        note
+                      ) =>
+                        note.id !==
+                        id
+                    )
+                )
             }
           />
         );
 
+
+      /* -----------------------------------------------
+         SETTINGS
+      ----------------------------------------------- */
 
       case 'settings':
         return (
@@ -669,6 +1198,7 @@ export default function App() {
             fplEntryId={
               fplEntryId
             }
+
             onSetFplEntryId={
               setFplEntryId
             }
@@ -676,26 +1206,41 @@ export default function App() {
         );
 
 
+      /* -----------------------------------------------
+         HOME
+
+         Still receives legacy football temporarily.
+      ----------------------------------------------- */
+
       case 'home':
+
       default:
         return (
           <HomePage
             football={
-              footballEvents
-            }
+              footballUniversalEvents
+     }
+
             footballMode={
               footballMode
             }
+
             footballNotice={
               footballNotice
             }
-            f1={f1}
+
+            f1={
+              f1
+            }
+
             events={
               allEvents
             }
+
             onNavigate={
               setRoute
             }
+
             {...shared}
           />
         );
@@ -704,35 +1249,42 @@ export default function App() {
 
 
   /* -----------------------------------------------------
-     SHELL
+     APP SHELL
   ----------------------------------------------------- */
 
   return (
     <div className="app-shell">
+
       <SportsDrawer
         open={
           drawerOpen
         }
+
         route={
           route
         }
+
         onClose={() =>
           setDrawerOpen(
             false
           )
         }
+
         onNavigate={
           setRoute
         }
       />
 
+
       <TopBar
         title={
           title[0]
         }
+
         subtitle={
           title[1]
         }
+
         onMenu={() =>
           setDrawerOpen(
             true
@@ -740,18 +1292,22 @@ export default function App() {
         }
       />
 
+
       <main>
         {page}
       </main>
+
 
       <BottomNav
         route={
           route
         }
+
         onNavigate={
           setRoute
         }
       />
+
     </div>
   );
 }

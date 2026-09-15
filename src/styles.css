@@ -712,3 +712,21 @@ main { padding: 18px 16px 30px; }
     width: 95%;
   }
 }
+.match-card__context {
+  margin-top: 10px;
+
+  padding-top: 9px;
+
+  border-top:
+    1px solid
+    var(--line);
+
+  color:
+    var(--muted);
+
+  font-size:
+    0.7rem;
+
+  text-align:
+    center;
+}

@@ -29,3 +29,11 @@ export {
   groupFootballByDay,
   buildFootballDashboard,
 } from './selectors.js';
+
+
+export {
+  toLegacyFootballEvent,
+  toLegacyFootballEvents,
+  fromLegacyFootballEvent,
+  fromLegacyFootballEvents,
+} from './legacy.js';
